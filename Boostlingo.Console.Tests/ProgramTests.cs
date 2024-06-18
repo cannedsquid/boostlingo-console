@@ -36,7 +36,7 @@ public class ProgramTests
             });
     }
 
-    private Mock<HttpMessageHandler> Handler { get; } = new(MockBehavior.Strict);
+    private Mock<HttpMessageHandler> Handler { get; } = new();
 
     [Fact]
     public async Task ProgramRequestsFileFromCorrectUri()
