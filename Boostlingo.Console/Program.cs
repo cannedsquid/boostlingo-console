@@ -3,6 +3,8 @@
 using System;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Boostlingo.Console.Models;
 
 public class Program
@@ -14,15 +16,23 @@ public class Program
     public static async Task<int> Execute(HttpMessageHandler? httpMessageHandler = null, CancellationToken cancellationToken = default)
     {
         var persons = await GetPersons(httpMessageHandler, cancellationToken);
-        // Read the below Json File directly from the specified URL https://microsoftedge.github.io/Demos/json-dummy-data/64KB.json
         if (persons.Count == 0)
         {
             Console.Error.WriteLine("No Persons fetched, aborting");
             return 1;
         }
 
-        // Read and parse the content of the file and insert it into a Database Table using the Relational Database of your choice.
-        // Read the content of the Database Table in which the data has been stored and output its content to the Console(STDOUT) by Sorting by Person’s Last Name Then by First Name.
+        using var database = new Database();
+        foreach (var person in persons)
+        {
+            database.InsertPerson(person);
+        }
+
+        var jsonOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        foreach (var person in database.GetPersonsByName())
+        {
+            Console.WriteLine(JsonSerializer.Serialize(person, jsonOptions));
+        }
 
         return 0;
     }
