@@ -24,6 +24,7 @@ internal class Database : IDisposable
 
     public IEnumerable<Person> GetPersonsByName()
     {
+
         var query = Connection.CreateCommand();
         query.CommandText = $"""
             SELECT first_name, last_name, language, id, bio, version
@@ -33,13 +34,14 @@ internal class Database : IDisposable
         using var reader = query.ExecuteReader();
         while (reader.Read())
         {
+            string? GetNullableString(int ordinal) => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
             yield return new Person()
             {
-                Name = $"{reader.GetString(0)} {reader.GetString(1)}",
-                Language = reader.GetString(2),
-                Id = reader.GetString(3),
-                Bio = reader.GetString(4),
-                Version = reader.GetDecimal(5),
+                Name = $"{GetNullableString(0)} {GetNullableString(1)}",
+                Language = GetNullableString(2),
+                Id = GetNullableString(3),
+                Bio = GetNullableString(4),
+                Version = reader.IsDBNull(5) ? null : reader.GetDecimal(5),
             };
         }
     }
@@ -51,13 +53,15 @@ internal class Database : IDisposable
             INSERT INTO {PersonsTableName} (first_name, last_name, language, id, bio, version)
             VALUES ($first_name, $last_name, $language, $id, $bio, $version)
             """;
+
+        void AddNullableParameterValue(string? parameterName, object? value) => update.Parameters.AddWithValue(parameterName, value ?? DBNull.Value);
         var name = person.Name?.Split(' ', 2); // n.b.: We're assuming all inputs consist of single-word first/last name pairs
-        update.Parameters.AddWithValue("$first_name", name?.Length > 0 ? name[0] : null);
-        update.Parameters.AddWithValue("$last_name", name?.Length > 1 ? name[1] : null);
-        update.Parameters.AddWithValue("$language", person.Language);
-        update.Parameters.AddWithValue("$id", person.Id);
-        update.Parameters.AddWithValue("$bio", person.Bio);
-        update.Parameters.AddWithValue("$version", person.Version);
+        AddNullableParameterValue("$first_name", name?.Length > 0 ? name[0] : null);
+        AddNullableParameterValue("$last_name", name?.Length > 1 ? name[1] : null);
+        AddNullableParameterValue("$language", person.Language);
+        AddNullableParameterValue("$id", person.Id);
+        AddNullableParameterValue("$bio", person.Bio);
+        AddNullableParameterValue("$version", person.Version);
         update.ExecuteNonQuery();
     }
 
