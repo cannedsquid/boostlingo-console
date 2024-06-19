@@ -70,7 +70,7 @@ internal class Database : IDisposable
     {
         var creation = Connection.CreateCommand();
         creation.CommandText = $"""
-            CREATE TABLE {PersonsTableName} (
+            CREATE TABLE IF NOT EXISTS {PersonsTableName} (
                 first_name TEXT,
                 last_name TEXT,
                 language TEXT,
@@ -79,7 +79,7 @@ internal class Database : IDisposable
                 version TEXT
             );
 
-            CREATE INDEX name_index ON {PersonsTableName} (
+            CREATE INDEX IF NOT EXISTS name_index ON {PersonsTableName} (
                 last_name COLLATE NOCASE,
                 first_name COLLATE NOCASE
             )
