@@ -13,7 +13,7 @@ public class Program
 
     public static async Task<int> Main() => await Execute();
 
-    public static async Task<int> Execute(HttpMessageHandler? httpMessageHandler = null, CancellationToken cancellationToken = default)
+    public static async Task<int> Execute(HttpMessageHandler? httpMessageHandler = null, string? databaseName = null, CancellationToken cancellationToken = default)
     {
         var persons = await GetPersons(httpMessageHandler, cancellationToken);
         if (persons.Count == 0)
@@ -22,7 +22,7 @@ public class Program
             return 1;
         }
 
-        using var database = new Database();
+        using var database = new Database(databaseName);
         foreach (var person in persons)
         {
             database.InsertPerson(person);

@@ -1,11 +1,15 @@
 namespace Boostlingo.Console.Tests;
 
+using System;
 using System.Net;
+using System.Text;
+using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Moq;
 using Moq.Protected;
 using Xunit;
 
-public class ProgramTests
+public class ProgramTests : IDisposable
 {
     private static readonly Uri SampleSource = new("https://microsoftedge.github.io/Demos/json-dummy-data/64KB.json");
 
@@ -34,9 +38,27 @@ public class ProgramTests
                 StatusCode = HttpStatusCode.OK,
                 Content = new StringContent(SampleData),
             });
+
+        Console.SetOut(ConsoleOutput);
+
+        DatabaseConnection = new($"Data Source={DatabaseName};Mode=Memory;Cache=Shared");
+        DatabaseConnection.Open();
     }
 
     private Mock<HttpMessageHandler> Handler { get; } = new();
+
+    private string DatabaseName { get; } = Guid.NewGuid().ToString();
+
+    private StringWriter ConsoleOutput { get; } = new();
+
+    private SqliteConnection DatabaseConnection { get; }
+
+    public void Dispose()
+    {
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+        ConsoleOutput.Dispose();
+        DatabaseConnection.Close();
+    }
 
     [Fact]
     public async Task ProgramRequestsFileFromCorrectUri()
@@ -90,6 +112,98 @@ public class ProgramTests
 
         VerifySampleDataRequests(Times.AtLeast(3));
     }
+
+    [Fact]
+    public async Task ProgramLoadsFetchedPersonsIntoDatabase()
+    {
+        await Program.Execute(Handler.Object, DatabaseName);
+
+        var query = DatabaseConnection.CreateCommand();
+        query.CommandText = """
+            SELECT last_name
+            FROM persons
+            """;
+        using var reader = query.ExecuteReader();
+        var lastNames = new List<string>();
+        while (reader.Read())
+        {
+            lastNames.Add(reader.GetString(0));
+        }
+
+        lastNames.Should().BeEquivalentTo(["Solangi", "Ghaffar"]);
+    }
+
+    [Fact]
+    public async Task ProgramLoadsIncompletePersonsIntoDatabase()
+    {
+        SetupSampleDataRequestHandler()
+            .ReturnsAsync(new HttpResponseMessage()
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(@"[
+  { ""name"": ""First Last"" },
+  { ""name"": ""First"" },
+  { ""language"": ""one"" },
+  { }
+]")});
+
+        await Program.Execute(Handler.Object, DatabaseName);
+
+        var query = DatabaseConnection.CreateCommand();
+        query.CommandText = """
+            SELECT COUNT(*)
+            FROM persons
+            """;
+        query.ExecuteScalar().Should().BeAssignableTo<long>()
+            .Which.Should().Be(4);
+
+        GetConsoleOutputLines().Should().ContainMatch("*First Last*");
+    }
+
+    [Fact]
+    public async Task ProgramPrintsPersonsByLastNameThenFirstName()
+    {
+        SetupSampleDataRequestHandler()
+            .ReturnsAsync(new HttpResponseMessage()
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(@"[
+  { ""name"": ""Alpha Zulu"" },
+  { ""name"": ""Zulu Zulu"" },
+  { ""name"": ""Charlie Zulu"" },
+  { ""name"": ""Zulu Alpha"" }
+]")});
+
+        await Program.Execute(Handler.Object, DatabaseName);
+
+        var output = GetConsoleOutputLines();
+        output.Reverse().Skip(1).First().Should().Contain("Zulu Zulu");
+        output.Reverse().Skip(2).First().Should().Contain("Charlie Zulu");
+        output.Reverse().Skip(3).First().Should().Contain("Alpha Zulu");
+        output.Reverse().Skip(4).First().Should().Contain("Zulu Alpha");
+    }
+
+    [Fact]
+    public async Task ProgramSupportsSortingNonAsciiNames()
+    {
+        SetupSampleDataRequestHandler()
+            .ReturnsAsync(new HttpResponseMessage()
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = new StringContent(@"[
+  { ""name"": ""Peter Zammit"" },
+  { ""name"": ""Ingibjörg Ólafsdóttir"" }
+]")
+            });
+
+        await Program.Execute(Handler.Object, DatabaseName);
+
+        var output = GetConsoleOutputLines();
+        output.Reverse().Skip(1).First().Should().Contain("Peter Zammit", because: "Ó is before Z in lexicographic unicode order");
+        output.Reverse().Skip(2).First().Should().Contain("Ingibjörg Ólafsdóttir");
+    }
+
+    private string[] GetConsoleOutputLines() => ConsoleOutput.ToString().Split(Environment.NewLine);
 
     private Moq.Language.Flow.ISetup<HttpMessageHandler, Task<HttpResponseMessage>> SetupSampleDataRequestHandler() =>
         Handler.Protected().Setup<Task<HttpResponseMessage>>(
