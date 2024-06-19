@@ -12,6 +12,7 @@ internal class Database : IDisposable
         name ??= Guid.NewGuid().ToString();
         Connection = new($"Data Source={name};Mode=Memory;Cache=Shared");
         Connection.Open();
+        Connection.CreateCollation("NOCASE", (a, b) => string.Compare(a, b, StringComparison.InvariantCultureIgnoreCase));
         SetupPersonTable();
     }
 
@@ -29,7 +30,7 @@ internal class Database : IDisposable
         query.CommandText = $"""
             SELECT first_name, last_name, language, id, bio, version
             FROM {PersonsTableName}
-            ORDER BY last_name, first_name
+            ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE
             """;
         using var reader = query.ExecuteReader();
         while (reader.Read())
@@ -78,7 +79,10 @@ internal class Database : IDisposable
                 version TEXT
             );
 
-            CREATE INDEX name_index ON {PersonsTableName} (last_name, first_name)
+            CREATE INDEX name_index ON {PersonsTableName} (
+                last_name COLLATE NOCASE,
+                first_name COLLATE NOCASE
+            )
             """;
         creation.ExecuteNonQuery();
     }
